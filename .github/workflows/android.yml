@@ -1,0 +1,54 @@
+name: Android APK
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: APK bauen
+        run: gradle --no-daemon assembleRelease
+
+      - name: APK umbenennen
+        run: cp app/build/outputs/apk/release/app-release.apk sleepr.apk
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sleepr-apk
+          path: sleepr.apk
+
+      # jeder Push auf main aktualisiert das Release "latest" (direkter Download aufs Handy)
+      - name: Release "latest" aktualisieren
+        if: github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete latest -y --cleanup-tag || true
+          gh release create latest sleepr.apk --prerelease --target "$GITHUB_SHA" \
+            --title "sleepr (aktueller Build #${{ github.run_number }})" \
+            --notes "Automatischer Build von ${GITHUB_SHA::7}. APK herunterladen und am Android-Gerät installieren."
+
+      - name: Release für Tag
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" sleepr.apk --title "sleepr $GITHUB_REF_NAME" --generate-notes
