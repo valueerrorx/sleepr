@@ -2,6 +2,8 @@
 
 Rauschgenerator für Android: weißes, rosa, braunes, graues und grünes Rauschen live erzeugt und frei mischbar. Gedacht zum Abschirmen von Störgeräuschen, Konzentrieren und Einschlafen.
 
+<p align="center"><img src="docs/screenshot.png" alt="sleepr: Mixer mit Spektrum, Presets und Wellen-Reglern" width="360"></p>
+
 ## Funktionen
 - 5 Rauschfarben, in Echtzeit am Gerät berechnet (keine Audiodateien, keine Schleifen)
 - Wellen-Modus je Farbe: zufällige Meereswellen mit einstellbarer Wellenlänge (3–20 s)
