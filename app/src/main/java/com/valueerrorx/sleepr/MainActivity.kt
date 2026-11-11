@@ -2,6 +2,7 @@ package com.valueerrorx.sleepr
 
 import android.Manifest
 import android.app.Activity
+import android.app.AlertDialog
 import android.content.pm.PackageManager
 import android.content.res.ColorStateList
 import android.graphics.Typeface
@@ -159,11 +160,38 @@ class MainActivity : Activity() {
 
     private fun toggle() {
         if (NoiseService.playing) { NoiseService.send(this, NoiseService.ACTION_STOP); ui.postDelayed({ render() }, 600); return }
-        if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED)
-            requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 1)
+        val prefs = getSharedPreferences("app", MODE_PRIVATE)
+        if (Build.VERSION.SDK_INT >= 33 && !prefs.getBoolean("notifAsked", false) &&
+            checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+            prefs.edit().putBoolean("notifAsked", true).apply()
+            explainNotifications() // erst erklären, dann Systemabfrage, dann abspielen
+            return
+        }
+        startPlay()
+    }
+
+    private fun startPlay() {
         Mixer.save(this)
         NoiseService.send(this, NoiseService.ACTION_PLAY)
         ui.postDelayed({ render() }, 150)
+    }
+
+    private fun explainNotifications() {
+        AlertDialog.Builder(this, android.R.style.Theme_Material_Dialog_Alert)
+            .setTitle("Benachrichtigung erlauben?")
+            .setMessage("Damit das Rauschen auch bei gesperrtem Bildschirm weiterläuft, verlangt Android eine dauerhafte Benachrichtigung, solange sleepr spielt.\n\n" +
+                "Darüber kannst du die Wiedergabe direkt vom Sperrbildschirm aus stoppen.\n\n" +
+                "sleepr schickt keine anderen Benachrichtigungen und hat keinen Internetzugriff.\n\n" +
+                "Ohne Erlaubnis läuft der Ton trotzdem, nur der Stopp-Knopf in der Benachrichtigung fehlt.")
+            .setPositiveButton("Weiter") { _, _ -> requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 1) }
+            .setNegativeButton("Ohne Benachrichtigung") { _, _ -> startPlay() }
+            .setOnCancelListener { startPlay() }
+            .show()
+    }
+
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == 1) startPlay() // spielt unabhängig von der Antwort
     }
 
     private fun changed() {
