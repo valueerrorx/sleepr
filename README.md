@@ -4,7 +4,8 @@ Rauschgenerator für Android: weißes, rosa, braunes, graues und grünes Rausche
 
 ## Funktionen
 - 5 Rauschfarben, in Echtzeit am Gerät berechnet (keine Audiodateien, keine Schleifen)
-- Presets: Fokus, Einschlafen, Abschirmen, Natur, Klassisch weiß
+- Wellen-Modus je Farbe: zufällige Meereswellen mit einstellbarer Wellenlänge (3–20 s)
+- Presets: Meer, Fokus, Einschlafen, Abschirmen, Natur, Klassisch weiß
 - Höhenregler (Tiefpass 400 Hz – 20 kHz) und Spektrumanzeige der Mischung
 - Timer (15–90 min) mit sanftem Ausblenden
 - Läuft als Vordergrunddienst weiter, auch bei gesperrtem Bildschirm; Stopp über Benachrichtigung/Sperrbildschirm

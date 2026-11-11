@@ -38,6 +38,11 @@ class MainActivity : Activity() {
     private lateinit var spectrum: SpectrumView
     private val seeks = arrayOfNulls<SeekBar>(5)
     private val values = arrayOfNulls<TextView>(5)
+    private val waveBtns = arrayOfNulls<ImageButton>(5)
+    private val waveSeeks = arrayOfNulls<SeekBar>(5)
+    private val waveVals = arrayOfNulls<TextView>(5)
+    private val waveBoxes = arrayOfNulls<View>(5)
+    private var touching: SeekBar? = null
     private lateinit var masterSeek: SeekBar
     private lateinit var masterVal: TextView
     private lateinit var toneSeek: SeekBar
@@ -111,11 +116,37 @@ class MainActivity : Activity() {
                         addView(text(c.hint, 12f, MUTED))
                     }
                     addView(names, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+                    val wb = ImageButton(this@MainActivity).apply {
+                        setImageResource(R.drawable.ic_wave)
+                        scaleType = android.widget.ImageView.ScaleType.CENTER
+                        setOnClickListener {
+                            Mixer.waves[i] = !Mixer.waves[i]
+                            syncWaves(); changed()
+                        }
+                    }
+                    waveBtns[i] = wb
+                    addView(wb, LinearLayout.LayoutParams(40.dp, 32.dp).apply { leftMargin = 6.dp })
                     addView(v, LinearLayout.LayoutParams(48.dp, ViewGroup.LayoutParams.WRAP_CONTENT))
                 }
+                val tint = if (i == 0) 0xFFC9D2D8.toInt() else c.color
                 addView(head, lp(if (i == 0) 10 else 14))
-                seeks[i] = seek(if (i == 0) 0xFFC9D2D8.toInt() else c.color) { Mixer.levels[i] = it }
+                seeks[i] = seek(tint) { Mixer.levels[i] = it }
                 addView(seeks[i], lp(2))
+
+                // Wellenlänge, nur sichtbar bei aktiven Wellen
+                val sv = text("", 12f, MUTED).apply { typeface = Typeface.MONOSPACE; gravity = Gravity.END }
+                waveVals[i] = sv
+                val ss = seek(tint, Mixer.WAVE_MAX - Mixer.WAVE_MIN) { Mixer.waveSec[i] = Mixer.WAVE_MIN + it }
+                ss.alpha = 0.85f
+                waveSeeks[i] = ss
+                val box = LinearLayout(this@MainActivity).apply {
+                    orientation = LinearLayout.VERTICAL
+                    setPadding(22.dp, 0, 0, 0)
+                    addView(row(text("∿ Wellenlänge  kurz ↔ lang", 12f, MUTED), sv))
+                    addView(ss)
+                }
+                waveBoxes[i] = box
+                addView(box, lp(0))
             }
         })
 
@@ -155,7 +186,12 @@ class MainActivity : Activity() {
     override fun onPause() { super.onPause(); ui.removeCallbacks(tick) }
 
     private val tick = object : Runnable {
-        override fun run() { render(); ui.postDelayed(this, 500) }
+        private var n = 0
+        override fun run() {
+            showLive()
+            if (n++ % 5 == 0) render()
+            ui.postDelayed(this, 100)
+        }
     }
 
     private fun toggle() {
@@ -201,11 +237,48 @@ class MainActivity : Activity() {
 
     private fun syncInputs() {
         syncing = true
-        for (i in 0..4) { seeks[i]?.progress = Mixer.levels[i]; values[i]?.text = Mixer.levels[i].toString() }
+        for (i in 0..4) {
+            seeks[i]?.progress = Mixer.levels[i]; values[i]?.text = Mixer.levels[i].toString()
+            waveSeeks[i]?.progress = Mixer.waveSec[i] - Mixer.WAVE_MIN
+            waveVals[i]?.text = "~${Mixer.waveSec[i]} s"
+        }
+        syncWaves()
         masterSeek.progress = Mixer.master; masterVal.text = "${Mixer.master} %"
         toneSeek.progress = Mixer.tone; toneVal.text = Mixer.fmtHz(Mixer.toneHz())
         syncing = false
         spectrum.invalidate()
+    }
+
+    private fun syncWaves() {
+        for (i in 0..4) {
+            val on = Mixer.waves[i]
+            val c = if (i == 0) 0xFFC9D2D8.toInt() else Mixer.COLORS[i].color
+            waveBtns[i]?.apply {
+                background = GradientDrawable().apply {
+                    cornerRadius = 10.dp.toFloat()
+                    setColor(if (on) c else SURFACE); setStroke(1.dp, if (on) c else LINE)
+                }
+                imageTintList = ColorStateList.valueOf(if (on) BG else MUTED)
+                contentDescription = "Wellen ${Mixer.COLORS[i].name} " + if (on) "aus" else "ein"
+            }
+            waveBoxes[i]?.visibility = if (on) View.VISIBLE else View.GONE
+        }
+    }
+
+    /** Regler folgen den Wellen sichtbar, solange niemand sie anfasst */
+    private fun showLive() {
+        val e = NoiseService.engine
+        val live = if (NoiseService.playing && e != null) e.live else null
+        for (i in 0..4) {
+            val s = seeks[i] ?: continue
+            if (s === touching) continue
+            if (live != null && Mixer.waves[i] && Mixer.levels[i] > 0) {
+                val l = live[i].toInt()
+                s.progress = l; values[i]?.text = "~$l"
+            } else if (s.progress != Mixer.levels[i]) {
+                s.progress = Mixer.levels[i]; values[i]?.text = Mixer.levels[i].toString()
+            }
+        }
     }
 
     private fun syncTimers() {
@@ -253,16 +326,16 @@ class MainActivity : Activity() {
         background = GradientDrawable().apply { setColor(SURFACE); setStroke(1.dp, LINE); cornerRadius = 14.dp.toFloat() }
     }
 
-    private fun seek(color: Int, onChange: (Int) -> Unit) = SeekBar(this).apply {
-        max = 100
+    private fun seek(color: Int, range: Int = 100, onChange: (Int) -> Unit) = SeekBar(this).apply {
+        max = range
         progressTintList = ColorStateList.valueOf(color)
         thumbTintList = ColorStateList.valueOf(color)
         progressBackgroundTintList = ColorStateList.valueOf(TRACK)
         setPadding(12.dp, 10.dp, 12.dp, 10.dp)
         setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
             override fun onProgressChanged(s: SeekBar, p: Int, fromUser: Boolean) { if (fromUser && !syncing) { onChange(p); changed() } }
-            override fun onStartTrackingTouch(s: SeekBar) {}
-            override fun onStopTrackingTouch(s: SeekBar) {}
+            override fun onStartTrackingTouch(s: SeekBar) { touching = s }
+            override fun onStopTrackingTouch(s: SeekBar) { touching = null; syncInputs() }
         })
     }
 
