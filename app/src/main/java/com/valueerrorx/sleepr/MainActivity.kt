@@ -1,24 +1,39 @@
 package com.valueerrorx.sleepr
 
 import android.Manifest
+import android.animation.ObjectAnimator
+import android.animation.PropertyValuesHolder
+import android.animation.StateListAnimator
+import android.animation.TimeInterpolator
 import android.app.Activity
 import android.app.AlertDialog
 import android.content.pm.PackageManager
 import android.content.res.ColorStateList
+import android.content.res.Configuration
 import android.graphics.Typeface
+import android.graphics.drawable.ColorDrawable
 import android.graphics.drawable.GradientDrawable
+import android.graphics.drawable.LayerDrawable
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.text.TextUtils
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
+import android.view.accessibility.AccessibilityNodeInfo
+import android.view.animation.DecelerateInterpolator
+import android.view.animation.OvershootInterpolator
+import android.widget.Button
+import android.widget.FrameLayout
 import android.widget.HorizontalScrollView
 import android.widget.ImageButton
+import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.SeekBar
+import android.widget.Space
 import android.widget.TextView
 
 class MainActivity : Activity() {
@@ -32,7 +47,11 @@ class MainActivity : Activity() {
     private val ON_ACCENT = 0xFF0D1A20.toInt()
 
     private val ui = Handler(Looper.getMainLooper())
-    private lateinit var play: ImageButton
+    private lateinit var play: LinearLayout
+    private lateinit var playIcon: ImageView
+    private lateinit var playLabel: TextView
+    private var playActive: Boolean? = null
+    private val glow = GradientDrawable().apply { gradientType = GradientDrawable.RADIAL_GRADIENT }
     private lateinit var status: TextView
     private lateinit var sub: TextView
     private lateinit var spectrum: SpectrumView
@@ -58,32 +77,34 @@ class MainActivity : Activity() {
         window.statusBarColor = BG
         window.navigationBarColor = BG
 
+        val land = resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
         val col = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(18.dp, 22.dp, 18.dp, 40.dp)
+            setPadding(18.dp, 22.dp, if (land) 24.dp else 18.dp, 24.dp)
         }
         fun add(v: View, top: Int = 18) {
             col.addView(v, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { topMargin = top.dp })
         }
 
-        add(text("sleepr", 30f, FG, bold = true), 0)
-        add(text("Farbiges Rauschen zum Abschirmen und Runterkommen. Mischen, Timer setzen, laufen lassen.", 15f, MUTED), 4)
+        val title = text("sleepr", 30f, FG, bold = true)
+        val intro = text("Farbiges Rauschen zum Abschirmen und Runterkommen. Mischen, Timer setzen, laufen lassen.", 15f, MUTED)
 
-        // Player
-        play = ImageButton(this).apply {
-            background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(ACCENT) }
-            imageTintList = ColorStateList.valueOf(ON_ACCENT)
-            scaleType = android.widget.ImageView.ScaleType.CENTER
-            setOnClickListener { toggle() }
+        // Player: Status über der Hauptaktion (Pille unten mittig wie in den aapps)
+        status = text("Bereit", 17f, FG, bold = true).apply { gravity = Gravity.CENTER }
+        sub = text("", 13f, MUTED).apply { gravity = Gravity.CENTER; maxLines = 2; ellipsize = TextUtils.TruncateAt.END }
+        play = pill()
+        val bar = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER_HORIZONTAL
+            background = LayerDrawable(arrayOf(ColorDrawable(BG), glow))
+            addView(status, lp(0)); addView(sub, lp(2))
+            addView(play, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { topMargin = 14.dp })
+            // Glow folgt der Pillenmitte
+            addOnLayoutChangeListener { v, _, _, _, _, _, _, _, _ ->
+                if (v.height > 0) glow.setGradientCenter(0.5f, (play.top + play.height / 2f) / v.height)
+            }
         }
-        status = text("Bereit", 19f, FG, bold = true)
-        sub = text("", 13f, MUTED)
-        val st = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; addView(status); addView(sub) }
-        add(LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL
-            addView(play, LinearLayout.LayoutParams(72.dp, 72.dp))
-            addView(st, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply { leftMargin = 18.dp })
-        }, 24)
+
+        if (!land) { add(title, 0); add(intro, 4) }
 
         // Spektrum
         spectrum = SpectrumView(this).apply { accent = ACCENT; grid = LINE; muted = MUTED }
@@ -178,7 +199,36 @@ class MainActivity : Activity() {
                 "Grau und Grün sind Näherungen: Grau gleicht die Lautheitswahrnehmung des Ohrs grob aus, Grün betont den mittleren Bereich um 500 Hz.",
             13f, MUTED), 26)
 
-        setContentView(ScrollView(this).apply { setBackgroundColor(BG); isFillViewport = true; addView(col) })
+        val scroll = ScrollView(this).apply { setBackgroundColor(BG); isFillViewport = true; addView(col) }
+        val match = ViewGroup.LayoutParams.MATCH_PARENT
+        setContentView(if (land) {
+            // Querformat: Kopf, Status und Pille links, Inhalt rechts
+            bar.setPadding(0, 0, 0, 16.dp)
+            val left = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                setPadding(24.dp, 22.dp, 12.dp, 0)
+                addView(title); addView(intro, lp(4))
+                addView(Space(this@MainActivity), LinearLayout.LayoutParams(0, 18.dp, 1f))
+                addView(bar, lp(0))
+            }
+            LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL; setBackgroundColor(BG)
+                addView(ScrollView(this@MainActivity).apply { isFillViewport = true; addView(left) }, LinearLayout.LayoutParams(0, match, 0.42f))
+                addView(scroll, LinearLayout.LayoutParams(0, match, 0.58f))
+            }
+        } else {
+            // Hochformat: feste Leiste unten, Inhalt scrollt darüber und blendet weich aus
+            bar.setPadding(18.dp, 4.dp, 18.dp, 16.dp)
+            val fade = View(this).apply { background = GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, intArrayOf(BG and 0x00FFFFFF, BG)) }
+            LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL; setBackgroundColor(BG)
+                addView(FrameLayout(this@MainActivity).apply {
+                    addView(scroll)
+                    addView(fade, FrameLayout.LayoutParams(match, 24.dp, Gravity.BOTTOM))
+                }, LinearLayout.LayoutParams(match, 0, 1f))
+                addView(bar, LinearLayout.LayoutParams(match, ViewGroup.LayoutParams.WRAP_CONTENT))
+            }
+        })
         syncInputs(); syncTimers(); render()
     }
 
@@ -288,8 +338,7 @@ class MainActivity : Activity() {
     private fun render() {
         val on = NoiseService.playing
         val e = NoiseService.engine
-        play.setImageResource(if (on) R.drawable.ic_pause else R.drawable.ic_play)
-        play.contentDescription = if (on) "Stoppen" else "Abspielen"
+        stylePill(!on)
         status.text = when {
             !on -> "Bereit"
             e != null && e.remainingMs() >= 0 -> (if (e.fading()) "Blendet aus · " else "Läuft · noch ") + fmtT(e.remainingMs())
@@ -309,6 +358,57 @@ class MainActivity : Activity() {
         if (bold) typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
         setLineSpacing(0f, 1.15f)
     }
+
+    // Die eine Hauptaktion: Pille, gefüllt mit Akzent solange bereit (wie AappsPillButton)
+    private fun pill(): LinearLayout {
+        val fs = resources.configuration.fontScale.coerceAtMost(2f)
+        playIcon = ImageView(this).apply { scaleType = ImageView.ScaleType.FIT_CENTER; importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO }
+        playLabel = text("", 13.8f, FG, bold = true).apply { letterSpacing = 0.14f; importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO }
+        return LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER
+            minimumWidth = 176.dp; minimumHeight = 52.dp
+            setPadding(24.dp, 12.dp, 24.dp, 12.dp)
+            isClickable = true; isFocusable = true
+            val icon = (20 * fs * resources.displayMetrics.density).toInt() // wächst mit der Schrift
+            addView(playIcon, LinearLayout.LayoutParams(icon, icon).apply { rightMargin = 10.dp })
+            addView(playLabel)
+            setOnClickListener { toggle() }
+            // Feder statt Ripple: kurz eindrücken, federnd zurück
+            fun scale(s: Float, ms: Long, ip: TimeInterpolator) = ObjectAnimator.ofPropertyValuesHolder(this,
+                PropertyValuesHolder.ofFloat(View.SCALE_X, s), PropertyValuesHolder.ofFloat(View.SCALE_Y, s)).apply { duration = ms; interpolator = ip }
+            stateListAnimator = StateListAnimator().apply {
+                addState(intArrayOf(android.R.attr.state_pressed), scale(0.95f, 90, DecelerateInterpolator()))
+                addState(intArrayOf(), scale(1f, 260, OvershootInterpolator(3f)))
+            }
+            setOnFocusChangeListener { _, _ -> playActive = null; render() }
+            accessibilityDelegate = object : View.AccessibilityDelegate() {
+                override fun onInitializeAccessibilityNodeInfo(host: View, info: AccessibilityNodeInfo) {
+                    super.onInitializeAccessibilityNodeInfo(host, info); info.className = Button::class.java.name
+                }
+            }
+        }
+    }
+
+    private fun stylePill(active: Boolean) {
+        if (playActive == active) return
+        playActive = active
+        val fg = if (active) ON_ACCENT else FG
+        play.background = GradientDrawable().apply {
+            cornerRadius = 100.dp.toFloat()
+            setColor(if (active) ACCENT else SURFACE)
+            setStroke(if (play.isFocused) 2.dp else 1.dp, if (play.isFocused) FG else if (active) ACCENT else LINE)
+        }
+        playIcon.setImageResource(if (active) R.drawable.ic_play else R.drawable.ic_stop)
+        playIcon.imageTintList = ColorStateList.valueOf(fg)
+        playLabel.setTextColor(fg)
+        playLabel.text = if (active) "START" else "STOP"
+        play.contentDescription = if (active) "Abspielen" else "Stoppen"
+        // weicher Halo nur im Bereit-Zustand
+        glow.colors = if (active) intArrayOf(alpha(ACCENT, 0.28f), alpha(ACCENT, 0.07f), alpha(ACCENT, 0f)) else intArrayOf(0, 0)
+        glow.gradientRadius = 72.dp.toFloat()
+    }
+
+    private fun alpha(c: Int, a: Float) = (c and 0x00FFFFFF) or ((a * 255).toInt() shl 24)
 
     private fun label(s: String) = text(s.uppercase(), 11f, MUTED, bold = true).apply { letterSpacing = 0.09f }
 
