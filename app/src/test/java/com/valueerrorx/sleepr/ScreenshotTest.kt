@@ -55,6 +55,7 @@ class ScreenshotTest {
         fun set(f: String, v: Any) = NoiseEngine::class.java.getDeclaredField(f).apply { isAccessible = true }.set(e, v)
         set("running", true)
         set("endFrame", 48000L * 60 * 24 + 48000L * 17)
+        set("fadeStart", 48000L * 60 * 20)
     }
 
     private fun setEngine(e: NoiseEngine?) =
