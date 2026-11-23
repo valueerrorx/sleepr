@@ -45,4 +45,12 @@ android {
         abortOnError = false
         checkReleaseBuilds = false
     }
+
+    testOptions.unitTests.isIncludeAndroidResources = true
+}
+
+// nur für Screenshots per Robolectric (./gradlew :app:testDebugUnitTest), nicht in der APK
+dependencies {
+    testImplementation("junit:junit:4.13.2")
+    testImplementation("org.robolectric:robolectric:4.18.1")
 }
